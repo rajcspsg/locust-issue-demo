@@ -1,44 +1,31 @@
-from locust import  TaskSet, task, constant, User, LoadTestShape
+from locust import User,task,constant_throughput,LoadTestShape
 
-class StagesShapeWithCustomUsers(LoadTestShape):
-    """
-    A simply load test shape class that has different user and spawn_rate at
-    different stages.
+# Load shape:
+# 1. 100 RPS for 10s
+# 2. 100->2500 RPS in 24h (linear: spawns +1 user every 36 seconds for a day)
+# 3. Repeat Step 1&2 four more times. Stop after 3 days if results are consistent.
 
-    Keyword arguments:
+DAY_IN_SECONDS = 24 * 60 * 60
 
-        stages -- A list of dicts, each representing a stage with the following keys:
-            duration -- When this many seconds pass the test is advanced to the next stage
-            users -- Total user count
-            spawn_rate -- Number of users to start/stop per second
-            stop -- A boolean that can stop that test at a specific stage
-
-        stop_at_end -- Can be set to stop once all stages have run.
-    """
-
-    stages = [
-        {"duration": 60, "users": 10,   "spawn_rate": 10},
-        {"duration": 100, "users": 50,  "spawn_rate": 10},
-        {"duration": 180, "users": 100, "spawn_rate": 10},
-        {"duration": 150, "users": 100, "spawn_rate": 10},
-        {"duration": 220, "users": 30,  "spawn_rate": 10},
-        {"duration": 230, "users": 10,  "spawn_rate": 10},
-        {"duration": 240, "users": 1,   "spawn_rate": 1},
+def stages_for_one_day(days):
+    warm_up_duration = (DAY_IN_SECONDS * days) + ((days + 1) * 10)
+    ramp_up_duration = warm_up_duration + DAY_IN_SECONDS
+    return [
+        {"duration":60, "users": 2, "spawn_rate": 2},
+        {"duration": 60, "users": 3, "spawn_rate": 3},
+        {"duration":60, "users": 2, "spawn_rate": 2}
     ]
+
+stages = []
+for i in range(5):
+    stages.extend(stages_for_one_day(i))
+
+class LinearShape(LoadTestShape):
 
     def tick(self):
         run_time = self.get_run_time()
-
-        for stage in self.stages:
-            if run_time < stage["duration"]:
-                # Not the smartest solution, TODO: find something better
-                try:
-                    tick_data = (stage["users"], stage["spawn_rate"], stage["user_classes"])
-                except KeyError:
-                    tick_data = (stage["users"], stage["spawn_rate"])
-                return tick_data
-
-        return None
+        print(run_time)
+        return next(((stage["users"], stage["spawn_rate"]) for stage in stages if run_time < stage["duration"]), None)
 
 class DummyUser(User):
     @task(1)
